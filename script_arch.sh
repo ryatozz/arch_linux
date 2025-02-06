@@ -1,20 +1,22 @@
 #!/bin/bash
 
-set -e  # Arrêt en cas d'erreur
+set -e 
 
-# Variables
+
+
 DISK="/dev/sda"
-ENC_DISK="/dev/sdb" # Disque dédié au stockage chiffré
+ENC_DISK="/dev/sdb" 
 HOSTNAME="archlinux"
-USERNAME="alex"
+USERNAME="ryatozz"
 
-# Partitionnement principal
+
+
 echo "[*] Partitionnement du disque principal..."
 parted -s "$DISK" mklabel gpt
 parted -s "$DISK" mkpart ESP fat32 1MiB 512MiB
 parted -s "$DISK" mkpart primary ext4 512MiB 100%
 
-# Formater et monter les partitions
+
 mkfs.fat -F32 "${DISK}1"
 mkfs.ext4 "${DISK}2"
 
@@ -22,44 +24,84 @@ mount "${DISK}2" /mnt
 mkdir /mnt/boot
 mount "${DISK}1" /mnt/boot
 
-# Chiffrement du disque secondaire avec LUKS + LVM
+
 echo "[*] Chiffrement du disque secondaire..."
 echo -n "archlinux" | cryptsetup luksFormat "$ENC_DISK"
 echo -n "archlinux" | cryptsetup open "$ENC_DISK" cryptroot
 
 pvcreate /dev/mapper/cryptroot
 vgcreate vg0 /dev/mapper/cryptroot
-lvcreate -L 9G vg0 -n storage
+lvcreate -L 10G vg0 -n storage
+lvcreate -L 5G vg0 -n share
 
 mkfs.ext4 /dev/vg0/storage
+mkfs.ext4 /dev/vg0/share
+
 mkdir /mnt/storage
+mkdir /mnt/share
 mount /dev/vg0/storage /mnt/storage
+mount /dev/vg0/share /mnt/share
 
-# Installation de base
+
 echo "[*] Installation de base..."
-pacstrap /mnt base linux linux-firmware lvm2 sudo
+pacstrap /mnt base linux linux-firmware lvm2 sudo vim git wget
 
-# Configuration du système
+
+pacstrap /mnt gcc make gdb base-devel
+
+
+pacstrap /mnt virtualbox virtualbox-host-modules-arch
+
+
 genfstab -U /mnt >> /mnt/etc/fstab
 
 arch-chroot /mnt /bin/bash <<EOF
   echo "$HOSTNAME" > /etc/hostname
+  hostnamectl set-hostname $HOSTNAME
   ln -sf /usr/share/zoneinfo/Europe/Paris /etc/localtime
   hwclock --systohc
   echo "LANG=fr_FR.UTF-8" > /etc/locale.conf
   echo "KEYMAP=fr" > /etc/vconsole.conf
   locale-gen
 
-  # Utilisateur
+  # Création de l'utilisateur
   useradd -m -G wheel -s /bin/bash $USERNAME
-  echo "$USERNAME:archlinux" | chpasswd
-  echo "root:archlinux" | chpasswd
+  echo "$USERNAME:azerty123" | chpasswd
+  echo "root:azerty123" | chpasswd
   echo "%wheel ALL=(ALL) ALL" > /etc/sudoers.d/wheel
 
-  # Installation de Hyprland
-  pacman -Syu --noconfirm hyprland git alacritty neovim
+  # Installation de l'environnement graphique
+  pacman -Syu --noconfirm xorg-server xorg-xinit sddm hyprland alacritty neovim firefox
 
-  # Configurer le partage
+  # Configuration d'Hyprland
+  mkdir -p /home/$USERNAME/.config/hypr
+  cat <<EOT > /home/$USERNAME/.config/hypr/hyprland.conf
+  monitor=,preferred,auto,1
+  exec-once=alacritty
+  input {
+      kb_layout=fr
+      follow_mouse=1
+  }
+  general {
+      gaps_in=5
+      gaps_out=10
+      border_size=2
+      col.active_border=0xff8aadf4
+      col.inactive_border=0xff1a1b26
+  }
+  EOT
+  chown -R $USERNAME:$USERNAME /home/$USERNAME/.config/hypr
+
+  # Activer le gestionnaire de session SDDM
+  systemctl enable sddm
+
+  # Configuration du dossier partagé
+  groupadd partage
+  usermod -aG partage $USERNAME
+  chown -R $USERNAME:partage /home/$USERNAME/share
+  chmod -R 770 /home/$USERNAME/share
+
+  # Activation de Samba
   pacman -S --noconfirm samba
   mkdir /home/$USERNAME/share
   echo "[share]" >> /etc/samba/smb.conf
@@ -69,4 +111,6 @@ arch-chroot /mnt /bin/bash <<EOF
 
 EOF
 
-echo "[*] Installation terminée !"
+echo "[*] Installation terminée ! Redémarrage dans 10 secondes..."
+sleep 10
+reboot
