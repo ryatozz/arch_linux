@@ -7,6 +7,14 @@ ENC_DISK="/dev/sdb"
 HOSTNAME="archlinux"
 USERNAME="ryatozz"
 
+echo "[*] Vérification et démontage des partitions..."
+mount | grep "$DISK" | awk '{print $3}' | xargs -r umount -l
+swapoff -a
+
+echo "[*] Suppression de l'ancienne table de partitions..."
+wipefs -a "$DISK"
+sgdisk --zap-all "$DISK"
+
 echo "[*] Partitionnement du disque principal..."
 parted -s "$DISK" mklabel gpt
 parted -s "$DISK" mkpart ESP fat32 1MiB 512MiB
@@ -33,11 +41,7 @@ mkdir /mnt/shared_folder
 mount /dev/vg0/shared_folder /mnt/shared_folder
 
 echo "[*] Installation de base..."
-pacstrap /mnt base linux linux-firmware lvm2 sudo vim git wget
-
-pacstrap /mnt gcc make gdb base-devel
-
-pacstrap /mnt virtualbox virtualbox-host-modules-arch
+pacstrap /mnt base linux linux-firmware lvm2 sudo vim git wget gcc make gdb base-devel virtualbox virtualbox-host-modules-arch
 
 mkdir -p /mnt/proc /mnt/sys /mnt/dev /mnt/dev/pts
 
