@@ -2,18 +2,14 @@
 
 set -e
 
-###############################################################################
-# Variables
-###############################################################################
+
 DISK="/dev/sda"
 ENC_DISK="/dev/sdb"
 HOSTNAME="archlinux"
 USERNAME="ryatozz"
-PASSWORD="azerty123"   # Mot de passe pour root et user
+PASSWORD="azerty123"
 
-###############################################################################
-# 1. Partitionnement du disque principal (pour /)
-###############################################################################
+
 echo "[*] Partitionnement du disque principal..."
 parted -s "$DISK" mklabel gpt
 parted -s "$DISK" mkpart ESP fat32 1MiB 512MiB
@@ -26,15 +22,13 @@ mount "${DISK}2" /mnt
 mkdir /mnt/boot
 mount "${DISK}1" /mnt/boot
 
-###############################################################################
-# 2. Chiffrement du disque secondaire + LVM dessus
-###############################################################################
+
 echo "[*] Chiffrement du disque secondaire..."
-# Mot de passe en clair "azerty123" juste pour l'exemple
+
 echo -n "$PASSWORD" | cryptsetup luksFormat "$ENC_DISK" -
 echo -n "$PASSWORD" | cryptsetup open "$ENC_DISK" cryptroot
 
-# Création du PV LVM, du VG et des LVs
+
 pvcreate /dev/mapper/cryptroot
 vgcreate vg0 /dev/mapper/cryptroot
 lvcreate -L 10G vg0 -n storage
@@ -48,20 +42,15 @@ mkdir /mnt/share
 mount /dev/vg0/storage /mnt/storage
 mount /dev/vg0/share /mnt/share
 
-###############################################################################
-# 3. Installation de base
-###############################################################################
+
 echo "[*] Installation de base (pacstrap) ..."
 pacstrap /mnt base linux linux-firmware lvm2 sudo vim git wget \
   gcc make gdb base-devel \
   virtualbox virtualbox-host-modules-arch
 
-# Génération du fstab
 genfstab -U /mnt >> /mnt/etc/fstab
 
-###############################################################################
-# 4. Configuration en chroot
-###############################################################################
+
 arch-chroot /mnt /bin/bash <<EOF
   # ------------------------------------------------
   # Configuration de base (locales, hostname, user)
@@ -152,9 +141,7 @@ EOT
 
 EOF
 
-###############################################################################
-# 5. Fin de l'installation
-###############################################################################
+
 echo "[*] Installation terminée ! Redémarrage dans 10 secondes..."
 sleep 10
 reboot
