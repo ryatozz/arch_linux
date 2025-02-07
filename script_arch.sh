@@ -13,21 +13,22 @@ PASSWORD="azerty123"
 echo "[*] Partitionnement du disque principal..."
 parted -s "$DISK" mklabel gpt
 parted -s "$DISK" mkpart ESP fat32 1MiB 512MiB
+
+parted -s "$DISK" set 1 esp on
+
 parted -s "$DISK" mkpart primary ext4 512MiB 100%
 
 mkfs.fat -F32 "${DISK}1"
 mkfs.ext4 "${DISK}2"
 
 mount "${DISK}2" /mnt
-mkdir /mnt/boot
+mkdir -p /mnt/boot
 mount "${DISK}1" /mnt/boot
 
 
 echo "[*] Chiffrement du disque secondaire..."
-
 echo -n "$PASSWORD" | cryptsetup luksFormat "$ENC_DISK" -
 echo -n "$PASSWORD" | cryptsetup open "$ENC_DISK" cryptroot
-
 
 pvcreate /dev/mapper/cryptroot
 vgcreate vg0 /dev/mapper/cryptroot
@@ -44,7 +45,8 @@ mount /dev/vg0/share /mnt/share
 
 
 echo "[*] Installation de base (pacstrap) ..."
-pacstrap /mnt base linux linux-firmware lvm2 sudo vim git wget \
+pacstrap /mnt \
+  base linux linux-firmware lvm2 sudo vim git wget \
   gcc make gdb base-devel \
   virtualbox virtualbox-host-modules-arch
 
@@ -52,9 +54,10 @@ genfstab -U /mnt >> /mnt/etc/fstab
 
 
 arch-chroot /mnt /bin/bash <<EOF
-  # ------------------------------------------------
-  # Configuration de base (locales, hostname, user)
-  # ------------------------------------------------
+
+  ###########################################################################
+  # Configuration de base (locales, hostname, user, etc.)
+  ###########################################################################
   echo "$HOSTNAME" > /etc/hostname
   hostnamectl set-hostname "$HOSTNAME"
   ln -sf /usr/share/zoneinfo/Europe/Paris /etc/localtime
@@ -69,12 +72,11 @@ arch-chroot /mnt /bin/bash <<EOF
   useradd -m -G wheel -s /bin/bash "$USERNAME"
   echo "$USERNAME:$PASSWORD" | chpasswd
   echo "root:$PASSWORD" | chpasswd
-
   echo "%wheel ALL=(ALL) ALL" > /etc/sudoers.d/wheel
 
-  # ------------------------------------------------
+  ###########################################################################
   # Installation de l'environnement graphique
-  # ------------------------------------------------
+  ###########################################################################
   pacman -Syu --noconfirm xorg-server xorg-xinit sddm hyprland alacritty neovim firefox
 
   # Configuration Hyprland
@@ -99,12 +101,12 @@ EOT
   # Activer le gestionnaire de session SDDM
   systemctl enable sddm
 
-  # ------------------------------------------------
+  ###########################################################################
   # Configuration du dossier partagé + Samba
-  # ------------------------------------------------
+  ###########################################################################
   groupadd partage
   usermod -aG partage $USERNAME
-  # Petit dossier "share" dans le home
+
   mkdir /home/$USERNAME/share
   chown -R $USERNAME:partage /home/$USERNAME/share
   chmod -R 770 /home/$USERNAME/share
@@ -115,27 +117,22 @@ EOT
   echo "guest ok = yes" >> /etc/samba/smb.conf
   systemctl enable smb
 
-  # ------------------------------------------------
-  # Installation et configuration du bootloader (GRUB)
-  # ------------------------------------------------
+  ###########################################################################
+  # Installation et configuration du bootloader (GRUB en UEFI)
+  ###########################################################################
   pacman -S --noconfirm grub efibootmgr virtualbox-guest-utils
 
-  # Installation de grub en UEFI
   grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB
   grub-mkconfig -o /boot/grub/grub.cfg
 
-  # (Optionnel) Mise à jour de l’initramfs au cas où
-  # mkinitcpio -P
-
-  # ------------------------------------------------
-  # Activer le service VirtualBox Guest (pour la VM invitée)
-  # ------------------------------------------------
+  ###########################################################################
+  # Activer le service VirtualBox Guest
+  ###########################################################################
   systemctl enable vboxservice
 
-  # ------------------------------------------------
-  # Installation et activation d'un gestionnaire réseau
-  # (recommandé pour avoir le net en interface graphique)
-  # ------------------------------------------------
+  ###########################################################################
+  # Installation et activation d'un gestionnaire réseau (NetworkManager)
+  ###########################################################################
   pacman -S --noconfirm networkmanager
   systemctl enable NetworkManager
 
