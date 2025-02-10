@@ -36,7 +36,7 @@ lvcreate -L 10G vg0 -n storage
 
 lvcreate -L 5G vg0 -n share
 
-lvcreate -L 2G vg0 -n swap
+lvcreate -L 16G vg0 -n swap
 
 
 mkfs.ext4 /dev/vg0/storage
