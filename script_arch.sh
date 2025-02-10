@@ -2,13 +2,14 @@
 
 set -e
 
+
 DISK="/dev/sda"
 ENC_DISK="/dev/sdb"
 HOSTNAME="archlinux"
 USERNAME="ryatozz"
 PASSWORD="azerty123"
 
-echo "[*] Partitionnement du disque principal..."
+echo "[*] Partitionnement du disque principal (UEFI + partition racine)..."
 parted -s "$DISK" mklabel gpt
 parted -s "$DISK" mkpart ESP fat32 1MiB 512MiB
 parted -s "$DISK" set 1 esp on
@@ -21,42 +22,53 @@ mount "${DISK}2" /mnt
 mkdir -p /mnt/boot
 mount "${DISK}1" /mnt/boot
 
-echo "[*] Chiffrement du disque secondaire..."
+echo "[*] Chiffrement du deuxième disque ($ENC_DISK) + LVM..."
+
 echo -n "$PASSWORD" | cryptsetup luksFormat "$ENC_DISK" -
 echo -n "$PASSWORD" | cryptsetup open "$ENC_DISK" cryptroot
 
+
 pvcreate /dev/mapper/cryptroot
 vgcreate vg0 /dev/mapper/cryptroot
+
+
 lvcreate -L 10G vg0 -n storage
+
 lvcreate -L 5G vg0 -n share
 
 lvcreate -L 2G vg0 -n swap
+
 
 mkfs.ext4 /dev/vg0/storage
 mkfs.ext4 /dev/vg0/share
 mkswap /dev/vg0/swap
 
-mkdir /mnt/storage
-mkdir /mnt/share
-mount /dev/vg0/storage /mnt/storage
-mount /dev/vg0/share /mnt/share
 
-echo "[*] Installation de base (pacstrap) ..."
+
+echo "[*] Installation de base (pacstrap)..."
 pacstrap /mnt \
-  base linux linux-firmware lvm2 sudo vim git wget \
+  base linux linux-firmware \
+  lvm2 sudo vim git wget \
   gcc make gdb base-devel \
   virtualbox virtualbox-host-modules-arch
 
+echo "[*] Génération du fstab..."
 genfstab -U /mnt >> /mnt/etc/fstab
 
 
-echo "/dev/vg0/swap none swap defaults 0 0" >> /mnt/etc/fstab
 
-arch-chroot /mnt /bin/bash <<EOF
+cat <<EOF >> /mnt/etc/fstab
 
-  ###########################################################################
-  # Configuration de base (locales, hostname, user, etc.)
-  ###########################################################################
+# Volumes chiffrés (ouvert et monté manuellement) :
+
+#/dev/vg0/storage   /storage   ext4 defaults,noauto 0 0
+#/dev/vg0/share     /share     ext4 defaults,noauto 0 0
+#/dev/vg0/swap      none       swap defaults,noauto 0 0
+EOF
+
+arch-chroot /mnt /bin/bash <<EOFCHROOT
+
+  echo "[*] Configuration de base..."
   echo "$HOSTNAME" > /etc/hostname
   hostnamectl set-hostname "$HOSTNAME"
   ln -sf /usr/share/zoneinfo/Europe/Paris /etc/localtime
@@ -78,7 +90,7 @@ arch-chroot /mnt /bin/bash <<EOF
   ###########################################################################
   pacman -Syu --noconfirm xorg-server xorg-xinit sddm hyprland alacritty neovim firefox
 
-  # Configuration Hyprland
+  # Configuration Hyprland pour l'utilisateur
   mkdir -p /home/$USERNAME/.config/hypr
   cat <<EOT > /home/$USERNAME/.config/hypr/hyprland.conf
 monitor=,preferred,auto,1
@@ -117,16 +129,11 @@ EOT
   systemctl enable smb
 
   ###########################################################################
-  # Installation et configuration du bootloader (GRUB en UEFI)
+  # Bootloader (GRUB en UEFI) + VirtualBox Guest
   ###########################################################################
   pacman -S --noconfirm grub efibootmgr virtualbox-guest-utils
-
   grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB
   grub-mkconfig -o /boot/grub/grub.cfg
-
-  ###########################################################################
-  # Activer le service VirtualBox Guest
-  ###########################################################################
   systemctl enable vboxservice
 
   ###########################################################################
@@ -135,7 +142,7 @@ EOT
   pacman -S --noconfirm networkmanager
   systemctl enable NetworkManager
 
-EOF
+EOFCHROOT
 
 echo "[*] Installation terminée ! Redémarrage dans 10 secondes..."
 sleep 10
