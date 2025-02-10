@@ -2,20 +2,16 @@
 
 set -e
 
-
 DISK="/dev/sda"
 ENC_DISK="/dev/sdb"
 HOSTNAME="archlinux"
 USERNAME="ryatozz"
 PASSWORD="azerty123"
 
-
 echo "[*] Partitionnement du disque principal..."
 parted -s "$DISK" mklabel gpt
 parted -s "$DISK" mkpart ESP fat32 1MiB 512MiB
-
 parted -s "$DISK" set 1 esp on
-
 parted -s "$DISK" mkpart primary ext4 512MiB 100%
 
 mkfs.fat -F32 "${DISK}1"
@@ -24,7 +20,6 @@ mkfs.ext4 "${DISK}2"
 mount "${DISK}2" /mnt
 mkdir -p /mnt/boot
 mount "${DISK}1" /mnt/boot
-
 
 echo "[*] Chiffrement du disque secondaire..."
 echo -n "$PASSWORD" | cryptsetup luksFormat "$ENC_DISK" -
@@ -35,14 +30,16 @@ vgcreate vg0 /dev/mapper/cryptroot
 lvcreate -L 10G vg0 -n storage
 lvcreate -L 5G vg0 -n share
 
+lvcreate -L 2G vg0 -n swap
+
 mkfs.ext4 /dev/vg0/storage
 mkfs.ext4 /dev/vg0/share
+mkswap /dev/vg0/swap
 
 mkdir /mnt/storage
 mkdir /mnt/share
 mount /dev/vg0/storage /mnt/storage
 mount /dev/vg0/share /mnt/share
-
 
 echo "[*] Installation de base (pacstrap) ..."
 pacstrap /mnt \
@@ -52,6 +49,8 @@ pacstrap /mnt \
 
 genfstab -U /mnt >> /mnt/etc/fstab
 
+
+echo "/dev/vg0/swap none swap defaults 0 0" >> /mnt/etc/fstab
 
 arch-chroot /mnt /bin/bash <<EOF
 
@@ -137,7 +136,6 @@ EOT
   systemctl enable NetworkManager
 
 EOF
-
 
 echo "[*] Installation terminée ! Redémarrage dans 10 secondes..."
 sleep 10
