@@ -15,7 +15,7 @@ parted -s "$DISK" mkpart primary ext4 513MiB 30.5GiB
 parted -s "$DISK" mkpart primary linux-swap 30.5GiB 32.5GiB
 parted -s "$DISK" mkpart primary ext4 32.5GiB 100%
 
-echo "[*] Formatage de la partition ESP et de la partition racine..."
+echo "[*] Formatage des partitions..."
 mkfs.fat -F32 "${DISK}1"
 mkfs.ext4 "${DISK}2"
 mkswap "${DISK}3"
@@ -44,7 +44,8 @@ pacstrap /mnt \
   base linux linux-firmware \
   lvm2 sudo vim git wget \
   gcc make gdb base-devel \
-  virtualbox virtualbox-host-modules-arch
+  virtualbox virtualbox-host-modules-arch \
+  xorg-server xorg-xinit sddm i3 alacritty neovim firefox dmenu
 
 echo "[*] Génération du fstab..."
 genfstab -U /mnt >> /mnt/etc/fstab
@@ -72,27 +73,32 @@ arch-chroot /mnt /bin/bash <<EOFCHROOT
   echo "root:$PASSWORD" | chpasswd
   echo "%wheel ALL=(ALL) ALL" > /etc/sudoers.d/wheel
   ###########################################################################
-  # Installation de l'environnement graphique
+  # Installation de l'environnement graphique avec i3
   ###########################################################################
-  pacman -Syu --noconfirm xorg-server xorg-xinit sddm hyprland alacritty neovim firefox
-  # Configuration de Hyprland pour l'utilisateur
-  mkdir -p /home/$USERNAME/.config/hypr
-  cat <<EOT > /home/$USERNAME/.config/hypr/hyprland.conf
-monitor=,preferred,auto,1
-exec-once=alacritty
-input {
-    kb_layout=fr
-    follow_mouse=1
+  mkdir -p /home/$USERNAME/.config/i3
+  cat <<EOT > /home/$USERNAME/.config/i3/config
+# Configuration de base i3
+set \$mod Mod4
+font pango:monospace 10
+
+# Démarrer i3bar
+bar {
+    status_command i3status
 }
-general {
-    gaps_in=5
-    gaps_out=10
-    border_size=2
-    col.active_border=0xff8aadf4
-    col.inactive_border=0xff1a1b26
-}
+
+# Raccourcis
+bindsym \$mod+Return exec alacritty
+bindsym \$mod+d exec dmenu_run
+bindsym \$mod+Shift+q kill
+bindsym \$mod+Shift+r restart
+bindsym \$mod+Shift+e exec "i3-msg exit"
+
+# Gestion des fenêtres
+floating_modifier \$mod
 EOT
-  chown -R $USERNAME:$USERNAME /home/$USERNAME/.config/hypr
+  chown -R $USERNAME:$USERNAME /home/$USERNAME/.config/i3
+  echo "exec i3" > /home/$USERNAME/.xinitrc
+  chown $USERNAME:$USERNAME /home/$USERNAME/.xinitrc
   # Activer SDDM pour la session graphique
   systemctl enable sddm
   ###########################################################################
@@ -138,6 +144,7 @@ EOSamba
   sed -i 's/^HOOKS=(.*)$/HOOKS=(base udev autodetect modconf block encrypt lvm2 filesystems keyboard fsck)/' /etc/mkinitcpio.conf
   mkinitcpio -P
 EOFCHROOT
+
 echo "[*] Installation terminée ! Redémarrage dans 10 secondes..."
 sleep 10
 reboot
