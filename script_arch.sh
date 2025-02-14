@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+
 DISK="/dev/sda"
 HOSTNAME="archlinux"
 USERNAME="ryatozz"
@@ -67,40 +68,33 @@ arch-chroot /mnt /bin/bash <<EOFCHROOT
   echo "KEYMAP=fr" > /etc/vconsole.conf
   sed -i 's/^#fr_FR.UTF-8 UTF-8/fr_FR.UTF-8 UTF-8/' /etc/locale.gen
   locale-gen
+
   # Création de l'utilisateur
   useradd -m -G wheel -s /bin/bash "$USERNAME"
   echo "$USERNAME:$PASSWORD" | chpasswd
   echo "root:$PASSWORD" | chpasswd
   echo "%wheel ALL=(ALL) ALL" > /etc/sudoers.d/wheel
+
   ###########################################################################
-  # Installation de l'environnement graphique avec i3
+  # Installation et configuration de l'environnement graphique (i3)
   ###########################################################################
+  # Installation de i3 et outils nécessaires est déjà faite par pacstrap.
+  
+  # Copier la config i3 depuis i3-starterpack pour éviter l'écran noir
+  # (si vous souhaitez utiliser cette configuration préétablie)
   mkdir -p /home/$USERNAME/.config/i3
-  cat <<EOT > /home/$USERNAME/.config/i3/config
-# Configuration de base i3
-set \$mod Mod4
-font pango:monospace 10
-
-# Démarrer i3bar
-bar {
-    status_command i3status
-}
-
-# Raccourcis
-bindsym \$mod+Return exec alacritty
-bindsym \$mod+d exec dmenu_run
-bindsym \$mod+Shift+q kill
-bindsym \$mod+Shift+r restart
-bindsym \$mod+Shift+e exec "i3-msg exit"
-
-# Gestion des fenêtres
-floating_modifier \$mod
-EOT
+  git clone https://github.com/addy-dclxvi/i3-starterpack.git /tmp/i3-starterpack
+  cp -a /tmp/i3-starterpack/.config/i3/* /home/$USERNAME/.config/i3/
+  rm -rf /tmp/i3-starterpack
   chown -R $USERNAME:$USERNAME /home/$USERNAME/.config/i3
+
+  # On crée également un .xinitrc minimal pour lancer i3 si besoin
   echo "exec i3" > /home/$USERNAME/.xinitrc
   chown $USERNAME:$USERNAME /home/$USERNAME/.xinitrc
-  # Activer SDDM pour la session graphique
+
+  # Activer SDDM pour gérer la session graphique (même si i3 est très léger)
   systemctl enable sddm
+
   ###########################################################################
   # Configuration du dossier partagé + Samba
   ###########################################################################
@@ -125,6 +119,7 @@ create mask = 0770
 directory mask = 0770
 EOSamba
   systemctl enable smb
+
   ###########################################################################
   # Bootloader (GRUB en UEFI) + VirtualBox Guest
   ###########################################################################
@@ -133,13 +128,15 @@ EOSamba
   grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB
   grub-mkconfig -o /boot/grub/grub.cfg
   systemctl enable vboxservice
+
   ###########################################################################
   # Installation et activation d'un gestionnaire réseau (NetworkManager)
   ###########################################################################
   pacman -S --noconfirm networkmanager
   systemctl enable NetworkManager
+
   ###########################################################################
-  # Configuration initramfs
+  # Configuration initramfs pour déverrouillage LUKS + LVM au boot
   ###########################################################################
   sed -i 's/^HOOKS=(.*)$/HOOKS=(base udev autodetect modconf block encrypt lvm2 filesystems keyboard fsck)/' /etc/mkinitcpio.conf
   mkinitcpio -P
